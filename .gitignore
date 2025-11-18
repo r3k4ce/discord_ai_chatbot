@@ -1,0 +1,104 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+*.egg-info/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environment directories
+venv/
+.venv/
+ENV/
+env/
+venv.bak/
+
+# Environment variables
+.env
+.env.*
+
+# SQLite DBs and other DB artifacts (safe to ignore for local dev)
+chatbot.db
+*.db
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pytest
+.pytest_cache/
+
+# Coverage
+htmlcov/
+coverage.xml
+.coverage
+.coverage.*
+
+# mypy
+.mypy_cache/
+
+# VSCode / JetBrains
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+temp/
+tmp/
+
+# Editor swap/backup files
+*~
+*.swp
+
+# PyInstaller
+*.spec
+
+# Sphinx
+docs/_build/
+
+# pipenv
+Pipfile.lock
+
+# MISC: Ignore any compiled artifacts and packaging byproducts
+*.egg
+*.whl
+
+# Cache folders
+.cache/
+
+# Ignore local secrets/keys
+*.pem
+*.key
+
+# IntelliJ
+*.iws
+
