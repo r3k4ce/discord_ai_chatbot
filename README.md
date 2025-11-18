@@ -54,7 +54,3 @@ Run the complete suite (includes database, provider, cog, and wiring tests):
 ```bash
 pytest
 ```
-Alternatively, execute the dedicated runner:
-```bash
-python tests.py
-```
