@@ -29,7 +29,7 @@ class DummyProvider(LLMProvider):
         super().__init__(name="dummy", models=["dummy-model"])
         self.calls = []
 
-    async def generate(self, model: str, messages: list[dict]) -> str:
+    async def generate(self, model: str, messages: list[dict], web_search: bool = False) -> str:
         self.calls.append((model, messages))
         return "dummy-response"
 
@@ -38,12 +38,22 @@ class DummyImageProvider(LLMProvider):
     def __init__(self):
         super().__init__(name="dummy-image", models=["dummy-image-model"])
 
-    async def generate(self, model: str, messages: list[dict]) -> dict:
+    async def generate(self, model: str, messages: list[dict], web_search: bool = False) -> dict:
         # Return an image dict for testing
         return {"type": "image", "data": b"PNG", "filename": "image.png"}
 
     def supports_images(self, model: str) -> bool:
         return model in self.models
+
+
+class SpyProvider(LLMProvider):
+    def __init__(self):
+        super().__init__(name="spy", models=["spy-model"]) 
+        self.calls = []
+
+    async def generate(self, model: str, messages: list[dict], web_search: bool = False):
+        self.calls.append((model, messages, web_search))
+        return "spy-response"
 
 
 @pytest.fixture
@@ -108,6 +118,13 @@ async def dummy_llm_manager(db_manager):
 
 
 @pytest_asyncio.fixture
+async def spy_manager(db_manager):
+    providers = {"spy": SpyProvider()}
+    manager = LLMManager(db_manager=db_manager, providers=providers, default_provider="spy", default_model="spy-model")
+    return manager
+
+
+@pytest_asyncio.fixture
 async def dummy_image_manager(db_manager):
     providers = {"dummy-image": DummyImageProvider()}
     manager = LLMManager(
@@ -147,6 +164,13 @@ async def test_llm_manager_validates_models(dummy_llm_manager):
 
 @pytest.mark.asyncio
 async def test_llm_manager_available_models(dummy_llm_manager):
+    @pytest.mark.asyncio
+    async def test_llm_manager_passes_web_search_flag(spy_manager, db_manager):
+        await db_manager.set_user_model(1, "spy", "spy-model")
+        await db_manager.set_user_web_search(1, True)
+        res = await spy_manager.generate_reply(1, "Ping with web search")
+        assert res == "spy-response"
+        assert spy_manager._providers["spy"].calls[0][2] is True
     models = dummy_llm_manager.get_available_models()
     assert models == {"dummy": ["dummy-model"]}
 
@@ -309,6 +333,15 @@ async def test_set_model_command_validation(bot, dummy_llm_manager, db_manager):
     await SettingsCog.setmodel.callback(cog, interaction, provider="dummy", model="wrong")
     interaction.response.send_message.assert_awaited_once()
     assert "Invalid" in interaction.response.send_message.await_args.kwargs["content"]
+
+
+@pytest.mark.asyncio
+async def test_set_websearch_command_success(bot, dummy_llm_manager, db_manager):
+    cog = SettingsCog(bot, dummy_llm_manager, db_manager)
+    interaction = mock_interaction(7)
+    await SettingsCog.websearch.callback(cog, interaction, enabled=True)
+    interaction.response.send_message.assert_awaited_once()
+    assert await db_manager.get_user_web_search(7) is True
 
 
 @pytest.mark.asyncio

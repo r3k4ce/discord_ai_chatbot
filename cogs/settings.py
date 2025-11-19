@@ -43,3 +43,14 @@ class SettingsCog(commands.Cog, name="Settings"):
             f"**{provider}**: {', '.join(model_list)}" for provider, model_list in models.items()
         ]
         await interaction.response.send_message(content="Available models:\n" + "\n".join(lines), ephemeral=True)
+
+    @app_commands.command(name="websearch", description="Enable or disable web search for your account")
+    @app_commands.describe(enabled="Enable web search (True/False)")
+    async def websearch(self, interaction: discord.Interaction, enabled: bool) -> None:
+        try:
+            await self.llm_manager.set_user_web_search(interaction.user.id, enabled)
+        except Exception as exc:
+            await interaction.response.send_message(content=f"Failed to set web_search: {exc}", ephemeral=True)
+            return
+        state = "enabled" if enabled else "disabled"
+        await interaction.response.send_message(content=f"🔎 Web search {state} for your account.", ephemeral=True)

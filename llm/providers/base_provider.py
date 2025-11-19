@@ -23,5 +23,5 @@ class LLMProvider(ABC):
         return False
 
     @abstractmethod
-    async def generate(self, model: str, messages: list[dict[str, str]]):
+    async def generate(self, model: str, messages: list[dict[str, str]], web_search: bool = False):
         """Return a text response for the provided conversation messages."""

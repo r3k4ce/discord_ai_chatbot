@@ -40,6 +40,16 @@ class LLMManager:
             raise ValueError(f"Invalid model '{model_name}' for provider '{provider_name}'")
         await self._db_manager.set_user_model(user_id, provider_name, model_name)
 
+    async def set_user_web_search(self, user_id: int, enabled: bool) -> None:
+        # Ensure user row exists
+        stored = await self._db_manager.get_user_model(user_id)
+        if stored is None:
+            await self._db_manager.set_user_model(user_id, self._default_provider, self._default_model)
+        await self._db_manager.set_user_web_search(user_id, enabled)
+
+    async def get_user_web_search(self, user_id: int) -> bool:
+        return await self._db_manager.get_user_web_search(user_id)
+
     async def get_user_model(self, user_id: int) -> tuple[str, str]:
         stored = await self._db_manager.get_user_model(user_id)
         if stored:
@@ -55,7 +65,8 @@ class LLMManager:
         history = await self._db_manager.get_history(user_id)
         messages = history + [{"role": "user", "content": prompt}]
         await self._db_manager.append_history(user_id, "user", prompt)
-        response = await provider.generate(model_name, messages)
+        web_search = await self.get_user_web_search(user_id)
+        response = await provider.generate(model_name, messages, web_search=web_search)
         await self._db_manager.append_history(user_id, "assistant", response)
         return response
 
@@ -69,7 +80,7 @@ class LLMManager:
         # Do not include long chat history for images; use only the prompt
         messages = [{"role": "user", "content": prompt}]
         await self._db_manager.append_history(user_id, "user", prompt)
-        response = await provider.generate(model_name, messages)
+        response = await provider.generate(model_name, messages, web_search=False)
         # If an image was generated, append a small placeholder to history
         if isinstance(response, dict) and response.get("type") == "image":
             await self._db_manager.append_history(user_id, "assistant", "[image]")

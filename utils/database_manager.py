@@ -29,9 +29,25 @@ class DatabaseManager:
                 user_id INTEGER PRIMARY KEY,
                 provider TEXT NOT NULL,
                 model TEXT NOT NULL
+                -- web_search flag toggles using web search tool
             )
             """
         )
+        # Ensure web_search column exists (backwards-compatible ALTER TABLE)
+        cursor = await self._conn.execute("PRAGMA table_info(user_settings);")
+        cols = await cursor.fetchall()
+        await cursor.close()
+        col_names = {row[1] for row in cols}
+        if "web_search" not in col_names:
+            try:
+                await self._conn.execute(
+                    "ALTER TABLE user_settings ADD COLUMN web_search INTEGER NOT NULL DEFAULT 0"
+                )
+                await self._conn.commit()
+            except Exception:
+                # If migration fails for older SQLite versions or other reasons,
+                # ignore and continue; absence of column will default to false via code paths.
+                pass
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS conversation_history (
@@ -82,6 +98,28 @@ class DatabaseManager:
         if row is None:
             return None
         return row[0], row[1]
+
+    async def set_user_web_search(self, user_id: int, enabled: bool) -> None:
+        conn = await self._connection()
+        async with self._lock:
+            await conn.execute(
+                "UPDATE user_settings SET web_search = ? WHERE user_id = ?",
+                (1 if enabled else 0, user_id),
+            )
+            await conn.commit()
+
+    async def get_user_web_search(self, user_id: int) -> bool:
+        conn = await self._connection()
+        async with self._lock:
+            cursor = await conn.execute(
+                "SELECT web_search FROM user_settings WHERE user_id = ?",
+                (user_id,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            return False
+        return bool(row[0])
 
     async def append_history(self, user_id: int, role: str, content: str) -> None:
         conn = await self._connection()

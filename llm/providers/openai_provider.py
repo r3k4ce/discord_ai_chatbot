@@ -26,7 +26,7 @@ class OpenAIProvider(LLMProvider):
         self._client = client or AsyncOpenAI(api_key=api_key)
         self._temperature = temperature
 
-    async def generate(self, model: str, messages: list[dict[str, str]]) -> Union[str, dict]:
+    async def generate(self, model: str, messages: list[dict[str, str]], web_search: bool = False) -> Union[str, dict]:
         if not self.supports(model):
             raise ValueError(f"Model '{model}' not supported by OpenAI provider")
         # If model is likely an image model, attempt the images endpoint first.
@@ -88,6 +88,46 @@ class OpenAIProvider(LLMProvider):
                                 "filename": "image.png",
                                 "content_type": "image/png",
                             }
+
+        # If web_search is requested and responses API is available, use it
+        if web_search and getattr(self._client, "responses", None) is not None:
+            # Build a single input string from the conversation messages.
+            # Use a readable multiline format: 'Role: content' to preserve context.
+            input_text = []
+            for m in messages:
+                role = m.get("role", "user")
+                content = m.get("content", "")
+                input_text.append(f"{role}: {content}")
+            input_text = "\n".join(input_text) if input_text else ""
+            try:
+                response = await self._client.responses.create(
+                    model=model,
+                    tools=[{"type": "web_search"}],
+                    input=input_text,
+                )
+                # New Responses API provides an output_text or output
+                text = getattr(response, "output_text", None)
+                if text:
+                    return text.strip()
+                # Try aggregating output parts
+                output = getattr(response, "output", None) or (response.get("output") if isinstance(response, dict) else None)
+                if output:
+                    pieces: list[str] = []
+                    for item in output:
+                        content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+                        if content:
+                            for part in content:
+                                if isinstance(part, dict):
+                                    if part.get("type") == "output_text" and part.get("text"):
+                                        pieces.append(part.get("text"))
+                                else:
+                                    if getattr(part, "type", None) == "output_text":
+                                        pieces.append(getattr(part, "text", ""))
+                    if pieces:
+                        return "\n".join(pieces).strip()
+            except Exception:
+                # If any error occurs, fall back to chat completions
+                pass
 
         # Default: use chat completions
         response = await self._client.chat.completions.create(
