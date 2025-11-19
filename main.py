@@ -26,7 +26,7 @@ class LLMCommandsBot(commands.Bot):
 	) -> None:
 		intents = discord.Intents.default()
 		intents.message_content = True
-		super().__init__(command_prefix=settings.command_prefix, intents=intents)
+		super().__init__(command_prefix="!", intents=intents)
 		self.settings = settings
 		self.db_manager = db_manager
 		self.llm_manager = llm_manager
@@ -34,6 +34,7 @@ class LLMCommandsBot(commands.Bot):
 	async def setup_hook(self) -> None:
 		await self.add_cog(ChatCog(self, self.llm_manager))
 		await self.add_cog(SettingsCog(self, self.llm_manager, self.db_manager))
+		await self.tree.sync()
 
 
 def _build_providers(settings: Settings) -> dict[str, LLMProvider]:

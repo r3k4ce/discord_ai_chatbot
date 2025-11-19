@@ -23,7 +23,6 @@ class Settings:
 	openai_api_key: str
 	gemini_api_key: str
 	database_path: str
-	command_prefix: str = "!"
 	default_provider: str = DEFAULT_PROVIDER
 	default_model: str = DEFAULT_MODEL
 	model_presets: Dict[str, List[str]] = field(
@@ -47,7 +46,6 @@ def load_settings() -> Settings:
 	gemini_api_key = _env("GEMINI_API_KEY")
 
 	database_path = os.getenv("DATABASE_PATH", str(Path("chatbot.db").absolute()))
-	command_prefix = os.getenv("COMMAND_PREFIX", "!")
 	default_provider = os.getenv("DEFAULT_PROVIDER", DEFAULT_PROVIDER).lower()
 	models = deepcopy(DEFAULT_MODELS)
 	default_model = os.getenv("DEFAULT_MODEL", DEFAULT_MODEL)
@@ -64,7 +62,6 @@ def load_settings() -> Settings:
 		openai_api_key=openai_api_key,
 		gemini_api_key=gemini_api_key,
 		database_path=database_path,
-		command_prefix=command_prefix,
 		default_provider=default_provider,
 		default_model=default_model,
 		model_presets=models,

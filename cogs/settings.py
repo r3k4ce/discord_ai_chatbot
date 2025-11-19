@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from discord import app_commands
 from discord.ext import commands
+import discord
 
 from llm.llm_manager import LLMManager
 from utils.database_manager import DatabaseManager
@@ -19,24 +21,25 @@ class SettingsCog(commands.Cog, name="Settings"):
         self.llm_manager = llm_manager
         self.db_manager = db_manager
 
-    @commands.command(name="setmodel", help="Set the provider and model to use")
-    async def setmodel(self, ctx: commands.Context, provider: str, model: str) -> None:
+    @app_commands.command(name="setmodel", description="Set the provider and model to use")
+    @app_commands.describe(provider="The LLM provider (e.g., openai, gemini)", model="The model name")
+    async def setmodel(self, interaction: discord.Interaction, provider: str, model: str) -> None:
         try:
-            await self.llm_manager.set_user_model(ctx.author.id, provider.lower(), model)
+            await self.llm_manager.set_user_model(interaction.user.id, provider.lower(), model)
         except ValueError as exc:
-            await ctx.send(content=f"Invalid model selection: {exc}")
+            await interaction.response.send_message(content=f"Invalid model selection: {exc}", ephemeral=True)
             return
-        await ctx.send(content=f"✅ Model set to {provider.lower()}:{model}")
+        await interaction.response.send_message(content=f"✅ Model set to {provider.lower()}:{model}")
 
-    @commands.command(name="clearchat", help="Clear your saved conversation history")
-    async def clearchat(self, ctx: commands.Context) -> None:
-        await self.db_manager.clear_history(ctx.author.id)
-        await ctx.send(content="🧹 Cleared your conversation history.")
+    @app_commands.command(name="clearchat", description="Clear your saved conversation history")
+    async def clearchat(self, interaction: discord.Interaction) -> None:
+        await self.db_manager.clear_history(interaction.user.id)
+        await interaction.response.send_message(content="🧹 Cleared your conversation history.", ephemeral=True)
 
-    @commands.command(name="models", help="List the available providers and models")
-    async def models(self, ctx: commands.Context) -> None:
+    @app_commands.command(name="models", description="List the available providers and models")
+    async def models(self, interaction: discord.Interaction) -> None:
         models = self.llm_manager.get_available_models()
         lines = [
             f"**{provider}**: {', '.join(model_list)}" for provider, model_list in models.items()
         ]
-        await ctx.send(content="Available models:\n" + "\n".join(lines))
+        await interaction.response.send_message(content="Available models:\n" + "\n".join(lines), ephemeral=True)

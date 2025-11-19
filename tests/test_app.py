@@ -52,7 +52,6 @@ def temp_env(monkeypatch, tmp_path) -> Path:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "chatbot.db"))
-    monkeypatch.setenv("COMMAND_PREFIX", "!")
     monkeypatch.setenv("DEFAULT_PROVIDER", "dummy")
     monkeypatch.setenv("DEFAULT_MODEL", "dummy-model")
     return tmp_path
@@ -65,7 +64,6 @@ def test_load_settings_reads_environment(temp_env):
     assert settings.openai_api_key == "test-openai"
     assert settings.gemini_api_key == "test-gemini"
     assert Path(settings.database_path).name == "chatbot.db"
-    assert settings.command_prefix == "!"
     assert "openai" in settings.model_presets
     assert "gemini" in settings.model_presets
 
@@ -224,15 +222,23 @@ async def bot():
     await bot.close()
 
 
+def mock_interaction(user_id=42):
+    interaction = MagicMock()
+    interaction.user.id = user_id
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
 @pytest.mark.asyncio
 async def test_chat_command_sends_reply(bot, dummy_llm_manager):
     cog = ChatCog(bot, dummy_llm_manager)
-    ctx = MagicMock()
-    ctx.author.id = 42
-    ctx.send = AsyncMock()
-    await ChatCog.chat.callback(cog, ctx, message="Hello")
-    ctx.send.assert_awaited_once()
-    assert ctx.send.await_args.kwargs["content"] == "dummy-response"
+    interaction = mock_interaction(42)
+    await ChatCog.chat.callback(cog, interaction, message="Hello")
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    assert interaction.followup.send.await_args.kwargs["content"] == "dummy-response"
 
 
 @pytest.mark.asyncio
@@ -240,44 +246,38 @@ async def test_chat_command_chunks_long_reply(bot, dummy_llm_manager):
     # Create a long response exceeding Discord's 2000-char limit
     long_text = "A" * (DISCORD_MAX_MESSAGE_LENGTH * 2 + 300)
     cog = ChatCog(bot, dummy_llm_manager)
-    ctx = MagicMock()
-    ctx.author.id = 123
-    ctx.send = AsyncMock()
+    interaction = mock_interaction(123)
     # Override the manager to return the long text
     cog.llm_manager.generate_reply = AsyncMock(return_value=long_text)
-    await ChatCog.chat.callback(cog, ctx, message="Hello")
+    await ChatCog.chat.callback(cog, interaction, message="Hello")
 
     # Ensure multiple sends occurred and the concatenated content equals the long text
     expected_chunks = list(chunk_text(long_text))
-    assert ctx.send.await_count == len(expected_chunks)
-    sent = "".join(call.kwargs["content"] for call in ctx.send.await_args_list)
+    assert interaction.followup.send.await_count == len(expected_chunks)
+    sent = "".join(call.kwargs["content"] for call in interaction.followup.send.await_args_list)
     assert sent == long_text
 
 
 @pytest.mark.asyncio
 async def test_chat_command_sends_image(bot, dummy_llm_manager):
     cog = ChatCog(bot, dummy_llm_manager)
-    ctx = MagicMock()
-    ctx.author.id = 42
-    ctx.send = AsyncMock()
+    interaction = mock_interaction(42)
     data = b"IMG"
     cog.llm_manager.generate_reply = AsyncMock(return_value={"type": "image", "data": data, "filename": "image.png"})
-    await ChatCog.chat.callback(cog, ctx, message="Generate an image")
-    ctx.send.assert_awaited_once()
-    assert "file" in ctx.send.await_args.kwargs
-    sent_file = ctx.send.await_args.kwargs["file"]
+    await ChatCog.chat.callback(cog, interaction, message="Generate an image")
+    interaction.followup.send.assert_awaited_once()
+    assert "file" in interaction.followup.send.await_args.kwargs
+    sent_file = interaction.followup.send.await_args.kwargs["file"]
     assert getattr(sent_file, "filename", None) == "image.png"
 
 
 @pytest.mark.asyncio
 async def test_image_command_sends_file(bot, dummy_image_manager):
     cog = ChatCog(bot, dummy_image_manager)
-    ctx = MagicMock()
-    ctx.author.id = 84
-    ctx.send = AsyncMock()
-    await ChatCog.image.callback(cog, ctx, prompt="Create sunset")
-    ctx.send.assert_awaited_once()
-    sent = ctx.send.await_args.kwargs
+    interaction = mock_interaction(84)
+    await ChatCog.image.callback(cog, interaction, prompt="Create sunset")
+    interaction.followup.send.assert_awaited_once()
+    sent = interaction.followup.send.await_args.kwargs
     assert "file" in sent
     file_obj = sent["file"]
     assert getattr(file_obj, "filename", None) == "image.png"
@@ -286,58 +286,48 @@ async def test_image_command_sends_file(bot, dummy_image_manager):
 @pytest.mark.asyncio
 async def test_chat_command_reports_errors(bot, dummy_llm_manager):
     cog = ChatCog(bot, dummy_llm_manager)
-    ctx = MagicMock()
-    ctx.author.id = 42
-    ctx.send = AsyncMock()
+    interaction = mock_interaction(42)
     cog.llm_manager.generate_reply = AsyncMock(side_effect=RuntimeError("boom"))
-    await ChatCog.chat.callback(cog, ctx, message="Hello")
-    ctx.send.assert_awaited_once()
-    assert "boom" in ctx.send.await_args.kwargs["content"]
+    await ChatCog.chat.callback(cog, interaction, message="Hello")
+    interaction.followup.send.assert_awaited_once()
+    assert "boom" in interaction.followup.send.await_args.kwargs["content"]
 
 
 @pytest.mark.asyncio
 async def test_set_model_command_success(bot, dummy_llm_manager, db_manager):
     cog = SettingsCog(bot, dummy_llm_manager, db_manager)
-    ctx = MagicMock()
-    ctx.author.id = 7
-    ctx.send = AsyncMock()
-    await SettingsCog.setmodel.callback(cog, ctx, provider="dummy", model="dummy-model")
-    ctx.send.assert_awaited_once()
-    assert "dummy" in ctx.send.await_args.kwargs["content"]
+    interaction = mock_interaction(7)
+    await SettingsCog.setmodel.callback(cog, interaction, provider="dummy", model="dummy-model")
+    interaction.response.send_message.assert_awaited_once()
+    assert "dummy" in interaction.response.send_message.await_args.kwargs["content"]
 
 
 @pytest.mark.asyncio
 async def test_set_model_command_validation(bot, dummy_llm_manager, db_manager):
     cog = SettingsCog(bot, dummy_llm_manager, db_manager)
-    ctx = MagicMock()
-    ctx.author.id = 7
-    ctx.send = AsyncMock()
-    await SettingsCog.setmodel.callback(cog, ctx, provider="dummy", model="wrong")
-    ctx.send.assert_awaited_once()
-    assert "Invalid" in ctx.send.await_args.kwargs["content"]
+    interaction = mock_interaction(7)
+    await SettingsCog.setmodel.callback(cog, interaction, provider="dummy", model="wrong")
+    interaction.response.send_message.assert_awaited_once()
+    assert "Invalid" in interaction.response.send_message.await_args.kwargs["content"]
 
 
 @pytest.mark.asyncio
 async def test_clear_chat_command(bot, dummy_llm_manager, db_manager):
     cog = SettingsCog(bot, dummy_llm_manager, db_manager)
-    ctx = MagicMock()
-    ctx.author.id = 99
-    ctx.send = AsyncMock()
+    interaction = mock_interaction(99)
     await db_manager.append_history(99, "user", "Hello")
-    await SettingsCog.clearchat.callback(cog, ctx)
-    ctx.send.assert_awaited_once()
+    await SettingsCog.clearchat.callback(cog, interaction)
+    interaction.response.send_message.assert_awaited_once()
     assert await db_manager.get_history(99) == []
 
 
 @pytest.mark.asyncio
 async def test_list_models_command(bot, dummy_llm_manager, db_manager):
     cog = SettingsCog(bot, dummy_llm_manager, db_manager)
-    ctx = MagicMock()
-    ctx.author.id = 99
-    ctx.send = AsyncMock()
-    await SettingsCog.models.callback(cog, ctx)
-    ctx.send.assert_awaited_once()
-    assert "dummy-model" in ctx.send.await_args.kwargs["content"]
+    interaction = mock_interaction(99)
+    await SettingsCog.models.callback(cog, interaction)
+    interaction.response.send_message.assert_awaited_once()
+    assert "dummy-model" in interaction.response.send_message.await_args.kwargs["content"]
 
 
 @pytest_asyncio.fixture
@@ -347,7 +337,6 @@ async def settings(tmp_path):
         openai_api_key="openai",
         gemini_api_key="gemini",
         database_path=str(tmp_path / "bot.db"),
-        command_prefix="!",
         default_provider="dummy",
         default_model="dummy-model",
         model_presets={"dummy": ["dummy-model"]},
@@ -357,9 +346,11 @@ async def settings(tmp_path):
 @pytest.mark.asyncio
 async def test_create_bot_registers_cogs(settings, db_manager, dummy_llm_manager):
     bot = main.create_bot(settings, db_manager, dummy_llm_manager)
+    bot.tree.sync = AsyncMock()
     try:
         await bot.setup_hook()
         assert "Chat" in bot.cogs
         assert "Settings" in bot.cogs
+        bot.tree.sync.assert_awaited_once()
     finally:
         await bot.close()

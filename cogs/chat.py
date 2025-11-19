@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from discord import app_commands
 from discord.ext import commands
 import discord
 import io
@@ -16,47 +17,43 @@ class ChatCog(commands.Cog, name="Chat"):
         self.bot = bot
         self.llm_manager = llm_manager
 
-    @commands.command(name="chat", help="Send a prompt to the configured model")
-    async def chat(self, ctx: commands.Context, *, message: str) -> None:
-        if not message:
-            await ctx.send(content="Please include a message after !chat.")
-            return
+    @app_commands.command(name="chat", description="Send a prompt to the configured model")
+    @app_commands.describe(message="The message to send to the LLM")
+    async def chat(self, interaction: discord.Interaction, message: str) -> None:
+        await interaction.response.defer(thinking=True)
         try:
-            async with ctx.typing():
-                reply = await self.llm_manager.generate_reply(ctx.author.id, message)
+            reply = await self.llm_manager.generate_reply(interaction.user.id, message)
         except Exception as exc:  # pragma: no cover - exercised via tests
-            await ctx.send(content=f"⚠️ Failed to contact the LLM: {exc}")
+            await interaction.followup.send(content=f"⚠️ Failed to contact the LLM: {exc}")
             return
         # If the provider returned an image dict, send as a Discord file
         if isinstance(reply, dict) and reply.get("type") == "image":
             data = reply.get("data")
             filename = reply.get("filename", "image.png")
-            await ctx.send(file=discord.File(io.BytesIO(data), filename))
+            await interaction.followup.send(file=discord.File(io.BytesIO(data), filename))
             return
 
         # Stream the reply in chunks so we never exceed Discord's 2000 char
         # message length limit. We don't label chunks; they are emitted in
         # sequence to preserve conversational flow.
         for chunk in chunk_text(reply):
-            await ctx.send(content=chunk)
+            await interaction.followup.send(content=chunk)
 
-    @commands.command(name="image", help="Generate an image with the configured model")
-    async def image(self, ctx: commands.Context, *, prompt: str) -> None:
-        if not prompt:
-            await ctx.send(content="Please include a prompt after !image.")
-            return
+    @app_commands.command(name="image", description="Generate an image with the configured model")
+    @app_commands.describe(prompt="The prompt for the image generation")
+    async def image(self, interaction: discord.Interaction, prompt: str) -> None:
+        await interaction.response.defer(thinking=True)
         try:
-            async with ctx.typing():
-                image_response = await self.llm_manager.generate_image(ctx.author.id, prompt)
+            image_response = await self.llm_manager.generate_image(interaction.user.id, prompt)
         except Exception as exc:  # pragma: no cover - exercised via tests
-            await ctx.send(content=f"⚠️ Failed to contact the LLM: {exc}")
+            await interaction.followup.send(content=f"⚠️ Failed to contact the LLM: {exc}")
             return
         if isinstance(image_response, dict) and image_response.get("type") == "image":
             data = image_response.get("data")
             filename = image_response.get("filename", "image.png")
-            await ctx.send(content="✅ Generated image:", file=discord.File(io.BytesIO(data), filename))
+            await interaction.followup.send(content="✅ Generated image:", file=discord.File(io.BytesIO(data), filename))
             return
         # Fallback in case provider returned text
         if isinstance(image_response, dict) and image_response.get("type") == "text":
             for chunk in chunk_text(image_response.get("text", "")):
-                await ctx.send(content=chunk)
+                await interaction.followup.send(content=chunk)
